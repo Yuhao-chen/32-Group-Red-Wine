@@ -1,0 +1,151 @@
+---
+output:
+  word_document: default
+  html_document: default
+---
+# Wine Analysis
+
+# Load packages
+```{r}
+library(rJava)
+library(RWeka)
+library(tidyr)
+library(ggplot2)
+library(corrplot)
+library(ggcorrplot)
+library(lmtest)
+library(MASS)
+library(car)
+library(leaps)
+```
+#################### Import Data ####################
+```{r}
+con <- url("http://archive.ics.uci.edu/ml/machine-learning-databases/wine-quality/winequality-red.csv") 
+wine <- read.csv(con,header = TRUE,sep = ";")
+wine1600 <- wine[1600,]
+wine1600=c(7.1,0.54,0.23,2.1,0.089,17,53,0.9977,3.44,0.61,9.4,5)
+wine <- rbind(wine,wine1600)
+wine$quality<-as.factor(wine$quality)
+str(wine)
+```
+#################### Data visualization ####################
+# Scatter Plot
+```{r}
+wine.1<-wine[,-1]
+pairs(wine[,-12],main="Scatter Plot of Red Wine Data Set")
+```
+# The Relationship between Response Variable and Predictors
+```{r}
+num.idx<-which(sapply(wine, is.numeric))
+
+wine[,num.idx] %>%
+  gather(-alcohol, key = "var", value = "value") %>%
+  ggplot(aes(x = value, y = alcohol)) +
+  geom_point() +
+  stat_smooth()+
+  facet_wrap(~ var, scales = "free") +
+  theme_bw()
+```
+# Correlation Matrix and Plot
+```{r}
+corr.m<-cor(wine[,num.idx])
+corr.m
+```
+
+```{r}
+ggcorrplot(corr.m, 
+           hc.order = TRUE, 
+           type = "lower",
+           lab = TRUE) 
+```
+# Relationship between quality and alcohol
+```{r}
+ggplot(data = wine,aes(x=quality,y=alcohol,color=quality))+
+  geom_boxplot()
+```
+
+#################### Model Building ####################
+# Initial Model and Checking
+```{r}
+i.fit<-lm(alcohol~.,data=wine) 
+
+bptest(i.fit)
+```
+
+# box-cox transformation
+```{r}
+lambdas <- seq(-2,2,1/20)
+lambdas <- lambdas[lambdas!=0]
+boxcox(alcohol~.,data=wine,lambda=lambdas)
+bc<-boxcox(alcohol~.,data=wine,lambda=lambdas)
+bc$x[which(bc$y==max(bc$y))] 
+```
+# Stepwise selection
+```{r}
+fit1<-lm(alcohol^(-1.434343)~.,data=wine) 
+summary(fit1)
+```
+```{r}
+step.model1 <- stepAIC(fit1, direction = "both", trace = FALSE)  
+summary(step.model1)
+```
+
+
+
+# Best subset regression
+```{r}
+regfit.full1 = regsubsets(alcohol^(-1.434343)~fixed.acidity + volatile.acidity + 
+                            citric.acid + residual.sugar + chlorides + free.sulfur.dioxide +
+                            total.sulfur.dioxide + 
+                            density + pH + sulphates + quality,
+                          wine,nbest = 1,nvmax = 11) 
+
+reg.summary1 = summary(regfit.full1) 
+reg.summary1 
+```
+```{r}
+plot(reg.summary1$rss,xlab="Number of Variables",ylab="RSS",type = "l") 
+
+plot(reg.summary1$adjr2,xlab="Number of Variables",ylab="Adjusted RSq",type = "l")
+points(which.max(reg.summary1$adjr2),reg.summary1$adjr2[11],col="red",cex=2,pch=20) 
+
+plot(reg.summary1$cp,xlab="Number of Variables",ylab="Cp",type = "l")
+points(which.min(reg.summary1$cp),reg.summary1$cp[11],col="red",cex=2,pch=20)  
+
+plot(reg.summary1$bic,xlab="Number of Variables",ylab="AIC",type = "l")
+points(which.min(reg.summary1$bic),reg.summary1$bic[11],col="red",cex=2,pch=20) 
+
+plot(regfit.full1,scale = "r2",family="Kai") 
+plot(regfit.full1,scale = "adjr2")
+plot(regfit.full1,scale = "Cp")
+plot(regfit.full1,scale = "bic")
+```
+# subsets(regfit.full1, statistic="rsq")
+
+```{r}
+coef(regfit.full1,11)
+
+fit2<-lm(alcohol^(-1.434343)~fixed.acidity + volatile.acidity + 
+           citric.acid + residual.sugar + 
+           total.sulfur.dioxide + 
+           density + pH + sulphates + quality,
+         data=wine)
+summary(fit2)
+```
+# Anova test
+```{r}
+anova(step.model1,fit2) 
+```
+#################### Model Checking ####################
+```{r}
+par(mfrow=c(2,2))
+plot(fit2)
+par(mfrow=c(1,1))
+```
+# assumptions are satisfied
+```{r}
+vif(fit2) 
+```
+
+
+
